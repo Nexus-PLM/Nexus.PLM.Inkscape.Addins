@@ -71,7 +71,7 @@ TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
     <name>{label}</name>
     <id>{extension_id}</id>
     <param name="command" type="string" gui-hidden="true">{command}</param>
-    <effect needs-live-preview="false">
+    <effect needs-live-preview="false" implements-custom-gui="true">
         <object-type>all</object-type>
         <effects-menu>
             <submenu name="{submenu}"/>
@@ -82,6 +82,15 @@ TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
     </script>
 </inkscape-extension>
 """
+
+# implements-custom-gui="true" on every entry, because of a small window Marc kept seeing.
+#
+# Inkscape shows a "working..." progress dialog for any effect extension from the moment it
+# starts until it exits. For a command that opens one of the tray's dialogs that is the whole time
+# the user is in it, so a Properties window arrived with a second, pointless little window flashing
+# up in front of it. The attribute is Inkscape's own way of saying "this extension draws its own
+# interface; do not draw one for it" - which is exactly true here, since the tray host draws
+# everything. Measured: without it the dialog appears on every command; with it, it does not.
 
 # Every entry needs a document, and that is not an oversight.
 #

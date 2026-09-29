@@ -4,7 +4,7 @@
     <name>Revise</name>
     <id>com.nexusplm.inkscape.revise</id>
     <param name="command" type="string" gui-hidden="true">revise</param>
-    <effect needs-live-preview="false">
+    <effect needs-live-preview="false" implements-custom-gui="true">
         <object-type>all</object-type>
         <effects-menu>
             <submenu name="Nexus PLM"/>

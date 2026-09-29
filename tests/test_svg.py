@@ -111,3 +111,78 @@ class TestLabelledKeys:
 
     def test_a_plain_drawing_shows_nothing(self):
         assert svg.labelled_keys(parse(PLAIN)) == []
+
+
+class TestWritingIntoAStagedFile:
+    """New from Template opens the staged file in a NEW Inkscape, so there is no in-memory
+    document to fill. The values have to go into the file first - which is safe precisely
+    because nothing has it open yet."""
+
+    def _staged(self, tmp_path, name="IND-000001-SVG.svg"):
+        path = tmp_path / name
+        path.write_bytes(WITH_LABELLED_TEXT.encode("utf-8"))
+        return path
+
+    def test_values_reach_the_file(self, tmp_path):
+        path = self._staged(tmp_path)
+        recorded, drawn = svg.write_into_file(str(path), {"PartNumber": "IND-000001-SVG"})
+        assert (recorded, drawn) == (1, 1)
+        assert b"IND-000001-SVG" in path.read_bytes()
+
+    def test_the_file_is_still_valid_svg_afterwards(self, tmp_path):
+        path = self._staged(tmp_path)
+        svg.write_into_file(str(path), {"Revision": "B"})
+        again = etree.parse(str(path)).getroot()
+        assert svg.read_values(again) == {"Revision": "B"}
+
+    def test_the_placeholder_does_not_survive(self, tmp_path):
+        """The bug driving showed: a title block still reading '-' on a numbered item."""
+        path = self._staged(tmp_path)
+        svg.write_into_file(str(path), {"PartNumber": "IND-000001-SVG"})
+        assert b"replace me" not in path.read_bytes()
+
+    def test_a_gzipped_svgz_round_trips(self, tmp_path):
+        import gzip
+        path = tmp_path / "IND-000002-SVG.svgz"
+        with gzip.open(path, "wb") as handle:
+            handle.write(WITH_LABELLED_TEXT.encode("utf-8"))
+        svg.write_into_file(str(path), {"Revision": "C"})
+        with gzip.open(path, "rb") as handle:
+            again = etree.fromstring(handle.read())
+        assert svg.read_values(again) == {"Revision": "C"}
+
+    def test_nothing_to_write_touches_nothing(self, tmp_path):
+        path = self._staged(tmp_path)
+        before = path.read_bytes()
+        assert svg.write_into_file(str(path), {}) == (0, 0)
+        assert path.read_bytes() == before
+
+
+class TestHowAValueReadsOnTheSheet:
+    """The record keeps what the service sent; the drawing shows what a person wants to read."""
+
+    def test_an_iso_timestamp_is_drawn_as_a_date(self):
+        root = parse(WITH_LABELLED_TEXT.replace("PartNumber", "CreationDate"))
+        svg.write_values(root, {"CreationDate": "2026-09-28T02:24:15.3456789Z"})
+        drawn = [t.findall("{http://www.w3.org/2000/svg}tspan")[0].text
+                 for t in root.iter("{http://www.w3.org/2000/svg}text")
+                 if t.get("{http://www.inkscape.org/namespaces/inkscape}label") == "CreationDate"]
+        # Only what is DRAWN is trimmed. Asserting over the whole document fails on the record,
+        # which is supposed to keep the exact value - the first version of this test did that.
+        assert drawn == ["2026-09-28"]
+
+    def test_but_the_record_keeps_the_exact_value(self):
+        """Refresh Values compares against it, so it must not be rounded off for looks."""
+        root = parse(WITH_LABELLED_TEXT.replace("PartNumber", "CreationDate"))
+        svg.write_values(root, {"CreationDate": "2026-09-28T02:24:15.3456789Z"})
+        assert svg.read_values(root)["CreationDate"] == "2026-09-28T02:24:15.3456789Z"
+
+    def test_anything_that_is_not_a_timestamp_is_left_alone(self):
+        for value in ["IND-00000002-SVG", "A", "2026", "not-a-date", "", "12.5"]:
+            assert svg.for_display(value) == value
+
+    def test_a_part_number_that_merely_looks_datelike_is_not_trimmed(self):
+        assert svg.for_display("ABCD-EF-GHTIJ") == "ABCD-EF-GHTIJ"
+
+    def test_none_draws_as_empty(self):
+        assert svg.for_display(None) == ""

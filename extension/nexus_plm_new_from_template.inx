@@ -4,7 +4,7 @@
     <name>New from Template...</name>
     <id>com.nexusplm.inkscape.new-from-template</id>
     <param name="command" type="string" gui-hidden="true">new-from-template</param>
-    <effect needs-live-preview="false">
+    <effect needs-live-preview="false" implements-custom-gui="true">
         <object-type>all</object-type>
         <effects-menu>
             <submenu name="Nexus PLM"/>

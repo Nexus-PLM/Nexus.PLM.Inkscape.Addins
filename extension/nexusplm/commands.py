@@ -78,9 +78,41 @@ def _to_upload(context):
 
 
 def _remember(context, answer):
-    """Write down that this file is that item - the next command reads it back."""
-    state.remember(context.path, answer.get("item_id"),
-                   answer.get("part_number"), answer.get("object_id"))
+    """Write down that this file is that item - the next command reads it back.
+
+    Through ``identity.remember`` rather than ``state.remember`` directly, because the service
+    does not use one name for the item across every endpoint: ``/plm/new`` answers
+    ``plm_object_id`` where others answer ``item_id``. identity knows both. Reaching past it to
+    state was how New from Template created an item and then wrote nothing down.
+    """
+    identity.remember(context.path, answer)
+
+
+def _hand_over(context, answer):
+    """Take the file PLM just staged: remember it, fill in its values, and show it.
+
+    The order matters. The values go in while the drawing is still only a file - once Inkscape
+    has it open, writing the path is forbidden and pointless. Without this step New from Template
+    opens a drawing whose title block still reads "-" for an item PLM has just numbered.
+    """
+    staged = answer.get("file_path")
+    if not staged:
+        return False
+
+    identity.remember(staged, answer)
+
+    mappings = answer.get("attribute_mappings") or {}
+    if mappings:
+        try:
+            recorded, drawn = svg.write_into_file(staged, mappings)
+            host.log("staged %s: wrote %d value(s), %d shown" % (staged, recorded, drawn))
+        except Exception as error:                              # noqa: BLE001
+            # A drawing that opens without its values is worth having; a command that fails
+            # because it could not fill them in is not.
+            host.log("could not write values into %s: %r" % (staged, error))
+
+    host.open_document(staged)
+    return True
 
 
 def _apply(context, answer, quiet=False):
@@ -121,13 +153,9 @@ def new_from_template(context):
     if not answer.get("success"):
         return _refused(context, answer, "New")
 
-    staged = answer.get("file_path")
-    if not staged:
-        return host.say(context.client,
-                        "PLM created the item but did not stage a file to open.", "warning")
-    state.remember(staged, answer.get("item_id"),
-                   answer.get("part_number"), answer.get("object_id"))
-    host.open_document(staged)
+    if not _hand_over(context, answer):
+        host.say(context.client,
+                 "PLM created the item but did not stage a file to open.", "warning")
 
 
 def open_from_plm(context):
@@ -136,12 +164,8 @@ def open_from_plm(context):
     if not answer.get("success"):
         return _refused(context, answer, "Open")
 
-    staged = answer.get("file_path")
-    if not staged:
-        return _refused(context, answer, "Open")
-    state.remember(staged, answer.get("item_id"),
-                   answer.get("part_number"), answer.get("object_id"))
-    host.open_document(staged)
+    if not _hand_over(context, answer):
+        _refused(context, answer, "Open")
 
 
 def search(context):
@@ -149,11 +173,7 @@ def search(context):
     answer = context.client.search(context.hwnd)
     if not answer.get("success"):
         return _refused(context, answer, "Search")
-    staged = answer.get("file_path")
-    if staged:
-        state.remember(staged, answer.get("item_id"),
-                       answer.get("part_number"), answer.get("object_id"))
-        host.open_document(staged)
+    _hand_over(context, answer)
 
 
 def save_to_plm(context):
@@ -228,11 +248,7 @@ def revise(context):
     if not answer.get("success"):
         return _refused(context, answer, "Revise")
 
-    staged = answer.get("file_path")
-    if staged:
-        state.remember(staged, answer.get("item_id"),
-                       answer.get("part_number"), answer.get("object_id"))
-        host.open_document(staged)
+    _hand_over(context, answer)
 
 
 def change_owner(context):
