@@ -67,7 +67,35 @@ def open_document(path):
     executable = inkscape_executable()
     if not executable:
         raise RuntimeError("Could not find inkscape.exe to open %s with." % path)
-    subprocess.Popen([executable, path], close_fds=True)
+
+    # The new Inkscape must be launched so that it inherits NOTHING from this process. Both
+    # halves below were paid for by a user-visible bug:
+    #
+    # 1. **DEVNULL on all three streams.** Inkscape reads an extension's stdout to get the
+    #    modified document back, and waits for that pipe to close. A child holding the same
+    #    handle keeps it open for as long as it lives, so Inkscape sat at "Not Responding" until
+    #    the second window was closed. A plain os.spawnv inherits the handles and does exactly
+    #    this - it was tried, and that is what happened.
+    # 2. **Detached, with its own process group**, so closing the first Inkscape cannot take the
+    #    second down with it.
+    #
+    # The Popen object itself is never reaped, which makes Python print "ResourceWarning:
+    # subprocess N is still running" to stderr at shutdown - and Inkscape shows stderr in a
+    # dialog. That is handled once, at the entry point, by silencing warnings: stderr is a user
+    # interface here, not a developer channel.
+    creation_flags = 0
+    if sys.platform == "win32":
+        creation_flags = getattr(subprocess, "DETACHED_PROCESS", 0) \
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+
+    subprocess.Popen(
+        [executable, path],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        creationflags=creation_flags,
+    )
 
 
 def inkscape_executable():

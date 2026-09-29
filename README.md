@@ -32,15 +32,18 @@ and carry no Inkscape API at all.
 
 ## Where a PLM value lives in a drawing
 
-Two places, and both matter:
+**The record is the point.** Every mapped attribute is written into the drawing's own
+`<metadata>`, under our namespace, and it survives a round trip through Inkscape because Inkscape
+preserves foreign namespaces there. That is what makes the file identifiable on its own - the
+attributes are *in* the SVG, not in a sidecar or a database row keyed on a filename.
 
-| | Where | Why |
+| | Where | |
 |---|---|---|
-| The record | `<metadata>` → `<nexus:attributes>` | Every value, whether or not the drawing shows it. Survives a round trip because Inkscape preserves foreign namespaces in `<metadata>`. |
-| The visible half | a `<text>` whose `inkscape:label` is the attribute key | A value nobody can see is a value nobody believes is there. Optional per drawing. |
+| **The record** | `<metadata>` → `<nexus:attributes>` | Every mapped value. The reason this add-in exists. |
+| Drawn on the sheet | a `<text>` whose `inkscape:label` is the attribute key | Optional, and most drawings will not use it. |
 
-Label a text element `PartNumber` and the part number is drawn into it. Label nothing and the
-values are still recorded.
+The second is a convenience for drawings that want a filled-in title block - the shipped template
+has one - but nothing depends on it. A drawing with no labelled text still carries every value.
 
 ## Three things Inkscape does differently
 
