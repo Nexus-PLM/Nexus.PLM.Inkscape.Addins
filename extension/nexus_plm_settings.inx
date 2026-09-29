@@ -4,7 +4,7 @@
     <name>Current Settings...</name>
     <id>com.nexusplm.inkscape.settings</id>
     <param name="command" type="string" gui-hidden="true">settings</param>
-    <effect needs-live-preview="false">
+    <effect needs-live-preview="false" implements-custom-gui="true">
         <object-type>all</object-type>
         <effects-menu>
             <submenu name="Nexus PLM"/>

@@ -125,9 +125,30 @@ def draw_values(root, values):
         key = element.get(_LABEL)
         if key is None or key not in values:
             continue
-        _set_text(element, "" if values[key] is None else str(values[key]))
+        _set_text(element, for_display(values[key]))
         drawn += 1
     return drawn
+
+
+def for_display(value):
+    """How a value reads on the sheet, as opposed to how it is recorded.
+
+    The record keeps exactly what the service sent - that is the truth, and Refresh Values has to
+    be able to compare it. The drawing is for a person, and a person reading a title block wants
+    a date, not ``2026-09-28T02:24:15.3456789Z``, which is what the first drawn sheet showed in
+    its DATE box.
+
+    Only the obvious case is handled: an ISO timestamp becomes its date. Anything else is left
+    exactly as it came, because guessing at a format is how a part number loses a character.
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    if len(text) >= 11 and text[10] == "T" and text[4] == "-" and text[7] == "-":
+        head = text[:10]
+        if head.replace("-", "").isdigit():
+            return head
+    return text
 
 
 def _set_text(element, value):
@@ -171,3 +192,44 @@ def cloned_with_values(root, values):
     duplicate = copy.deepcopy(root)
     write_values(duplicate, values)
     return duplicate
+
+
+def write_into_file(path, values):
+    """Put ``values`` into an SVG **file**, for a drawing Inkscape has not opened yet.
+
+    This is the one place the add-in writes a real path, and it is safe for the one reason that
+    matters: the file is a freshly staged drawing that nothing has open. The rule against writing
+    the document's path is about the file Inkscape is *showing* - there, Inkscape owns the buffer
+    and would overwrite or ignore anything written underneath it.
+
+    It exists because New from Template opens the staged file in a **new** Inkscape process, so
+    there is no in-memory document to put the values into. Without this the drawing opens with the
+    template's own placeholders - a title block full of "-" on an item PLM has just numbered,
+    which is exactly what driving it showed. LibreOffice's add-in learnt the same lesson and
+    writes into the staged file for the same reason.
+
+    Returns ``(recorded, drawn)`` as :func:`write_values` does, or ``(0, 0)`` when there is
+    nothing to write. Handles ``.svgz`` (gzipped SVG), which Inkscape writes and reads.
+    """
+    if not path or not values:
+        return 0, 0
+
+    from lxml import etree
+
+    gzipped = str(path).lower().endswith(".svgz")
+    opener = _gzip_open if gzipped else open
+
+    with opener(path, "rb") as handle:
+        tree = etree.parse(handle)
+
+    root = tree.getroot()
+    recorded, drawn = write_values(root, values)
+
+    with opener(path, "wb") as handle:
+        handle.write(etree.tostring(root, xml_declaration=True, encoding="UTF-8"))
+    return recorded, drawn
+
+
+def _gzip_open(path, mode):
+    import gzip
+    return gzip.open(path, mode)

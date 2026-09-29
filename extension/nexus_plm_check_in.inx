@@ -4,7 +4,7 @@
     <name>Check In</name>
     <id>com.nexusplm.inkscape.check-in</id>
     <param name="command" type="string" gui-hidden="true">check-in</param>
-    <effect needs-live-preview="false">
+    <effect needs-live-preview="false" implements-custom-gui="true">
         <object-type>all</object-type>
         <effects-menu>
             <submenu name="Nexus PLM"/>

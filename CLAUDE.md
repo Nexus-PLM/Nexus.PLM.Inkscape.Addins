@@ -32,7 +32,11 @@ python -m pytest tests/ -q
 
 ## Rules that are not negotiable
 
-- **Never read or write the document's real path.** Inkscape hands over a copy and takes the
+- **The metadata record is the deliverable.** Attributes are injected into the file's own data
+  model so the SVG carries them wherever it goes. Drawing values into labelled text elements is a
+  convenience most users will not use - never let it become the thing a command depends on.
+- **Never read or write the document's real path**, except a freshly staged file nothing has open
+  yet (`svg.write_into_file`). Inkscape hands over a copy and takes the
   result back on stdout. `inkex` says so in capitals, and writing it loses the user's work.
 - **Uploads send the drawing on screen**, via `host.upload_copy`, never `context.path`. The copy
   keeps the document's own file name, because the vault names the dataset from it and

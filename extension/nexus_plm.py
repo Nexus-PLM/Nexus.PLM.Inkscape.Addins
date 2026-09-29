@@ -13,6 +13,16 @@ rather than left to the command.
 
 import os
 import sys
+import warnings
+
+# Inkscape shows whatever an extension writes to stderr in a DIALOG. That is a feature - it is how
+# the "tray is not running" message reaches someone - but it means stderr is a USER INTERFACE, not
+# a developer channel. A Python warning there is an error popup in front of someone whose command
+# worked, which is exactly what a stray ResourceWarning about a spawned Inkscape produced.
+#
+# Warnings are for whoever is writing this file, and they can run the tests. Nobody using Inkscape
+# should be shown one.
+warnings.simplefilter("ignore")
 
 # The package sits beside this file. Inkscape puts the .inx's own directory on sys.path, but says
 # nothing about doing so for a subdirectory, and an extension that only works because of an

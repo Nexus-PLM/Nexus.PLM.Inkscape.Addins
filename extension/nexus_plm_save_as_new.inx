@@ -4,7 +4,7 @@
     <name>Save As New Item...</name>
     <id>com.nexusplm.inkscape.save-as-new</id>
     <param name="command" type="string" gui-hidden="true">save-as-new</param>
-    <effect needs-live-preview="false">
+    <effect needs-live-preview="false" implements-custom-gui="true">
         <object-type>all</object-type>
         <effects-menu>
             <submenu name="Nexus PLM"/>
