@@ -64,9 +64,16 @@ python -m pytest tests/ -q
 - Inkscape's in-memory document is never byte-identical to its file, so "has it changed?" cannot
   be answered by comparing them.
 
+## Installer
+
+`installer/Nexus.PLM.Inkscape.Addin.iss` - Inno Setup, per-user, no elevation. Compile with
+ISCC; `tests/test_installer.py` holds it against the source (version, destination, every payload
+file, every menu entry's .inx, uninstall scope). It installs into `%APPDATA%\inkscape\extensions`.
+`build.py --install` remains the developer path, and is not shipped.
+
 ## Still to do
 
-- No types or templates exist for SVG on the server, so New from Template has nothing to offer.
-- Only Connection Status, Sign In and Save As New have been driven end to end.
-- No installer: `build.py --install` is a developer script, and nothing user-facing may depend on
-  one.
+- Driven end to end: Connection Status, Sign In, New from Template, Check Out, Save to PLM (with
+  an unsaved edit - the on-screen drawing reached PLM), Check In, Properties. The other commands
+  are test-proven only.
+- Attributes do not survive **export** to PNG. XMP would; nobody has asked.
