@@ -24,7 +24,7 @@
 
 ; Keep in step with extension\nexusplm\commands.py VERSION. tests\test_installer.py fails when
 ; they drift.
-#define AppVersion "0.1.0"
+#define AppVersion "0.2.0"
 
 ; Inkscape's per-user extension directory. Roaming, not Local: Inkscape keeps its whole profile
 ; under %APPDATA%, and that is where build.py installs to as well.
