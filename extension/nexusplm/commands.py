@@ -206,7 +206,7 @@ def save_as_new(context):
 
     answer = context.client.save_as_new(
         _to_upload(context), context.hwnd,
-        attributes=svg.read_values(context.root),
+        attributes=svg.offerable_values(context.root),
         file_extensions=FILE_EXTENSIONS)
     if not answer.get("success"):
         return _refused(context, answer, "Save As New Item")
@@ -227,7 +227,16 @@ def save_as_existing(context):
     if not answer.get("success"):
         return _refused(context, answer, "Save As Existing Item")
     _remember(context, answer)
-    _apply(context, answer, quiet=True)
+
+    # The answer names the item the drawing now belongs to but carries none of its values - the
+    # service's Save As Existing answers no mappings, for any host. Ask for them, so the sheet
+    # stops reading "-" and shows whose drawing it has become. Driven: IND-00000003-SVG took the
+    # plain drawing and the title block stayed blank until Refresh Values was run by hand.
+    item_id = answer.get("item_id")
+    if item_id:
+        values = context.client.refresh_values(item_id)
+        if values.get("success"):
+            _apply(context, values, quiet=True)
 
 
 # ── lifecycle ────────────────────────────────────────────────────────────────

@@ -82,6 +82,27 @@ def read_values(root):
     return values
 
 
+#: Keys PLM stamps itself. A drawing's copies of them are never offered back as the values of a
+#: new item. Save As New merges whatever a caller offers straight onto the new revision (only
+#: ``plm_`` keys are refused), so a drawing copied from IND-00000004 would hand the new item its
+#: old part number, and a template's empty record wiped ``createdBy`` and ``creationDate`` to ""
+#: - measured on IND-00000007-SVG, 29 Sep 2026: every value came back blank and the title block
+#: emptied.
+SYSTEM_KEYS = frozenset(k.lower() for k in (
+    "PartNumber", "Revision", "CreatedBy", "CreationDate", "ModifiedBy", "ModificationDate"))
+
+
+def offerable_values(root):
+    """The drawing's values a new item may take as defaults: filled in, and not PLM's own.
+
+    An empty ``<nexus:value>`` is a slot the template left for PLM to fill, not a value of "";
+    offering it as "" is how the blanks above were written. And the identity and stamp keys belong
+    to the server whatever the drawing says.
+    """
+    return {key: value for key, value in read_values(root).items()
+            if value and key.lower() not in SYSTEM_KEYS}
+
+
 def write_values(root, values):
     """Record ``values`` in ``<metadata>`` and draw any that the document shows.
 

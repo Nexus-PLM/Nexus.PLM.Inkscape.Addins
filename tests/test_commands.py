@@ -163,6 +163,46 @@ class TestWhatGetsUploaded:
         assert "check_in" in client.calls
 
 
+class TestSaveAsNewOffers:
+    """What Save As New tells the service the drawing holds. Measured cause of blank items."""
+
+    TEMPLATE = """<svg xmlns="http://www.w3.org/2000/svg" xmlns:nexus="https://nexusplm.com/ns/plm">
+      <metadata><nexus:attributes>
+        <nexus:value key="PartNumber"/><nexus:value key="Revision"/>
+        <nexus:value key="CreatedBy"/><nexus:value key="CreationDate"/>
+        <nexus:value key="Description">A plain drawing</nexus:value>
+        <nexus:value key="Author"/>
+      </nexus:attributes></metadata>
+    </svg>"""
+
+    def test_empty_slots_and_server_keys_stay_home(self, monkeypatch):
+        client = FakeClient()
+        sent = {}
+        monkeypatch.setattr(client, "save_as_new",
+                            lambda path, hwnd, attributes=None, file_extensions=None:
+                            sent.update(attributes=attributes) or {"success": True})
+        commands.save_as_new(context(client, extension=FakeExtension(self.TEMPLATE)))
+        assert sent["attributes"] == {"Description": "A plain drawing"}
+
+
+class TestSaveAsExistingFillsTheSheet:
+    def test_the_items_values_are_fetched_and_drawn(self, monkeypatch):
+        """The service's answer names the item and nothing else; the values come from a second ask."""
+        client = FakeClient(
+            save_as_existing={"success": True, "item_id": "item-3", "part_number": "DRW-000003-SVG"},
+            refresh_values={"success": True,
+                            "attribute_mappings": {"PartNumber": "DRW-000003-SVG", "Revision": "A"}})
+        ctx = context(client)
+        commands.save_as_existing(ctx)
+        assert client.calls.index("save_as_existing") < client.calls.index("refresh_values")
+        assert svg.read_values(ctx.root) == {"PartNumber": "DRW-000003-SVG", "Revision": "A"}
+
+    def test_a_refusal_asks_for_nothing_more(self):
+        client = FakeClient(save_as_existing={"success": False, "error": "Locked by jdoe."})
+        commands.save_as_existing(context(client))
+        assert "refresh_values" not in client.calls
+
+
 class TestReviseInPlace:
     """Revise stages the next revision under the SAME file name. The open window must become it.
 

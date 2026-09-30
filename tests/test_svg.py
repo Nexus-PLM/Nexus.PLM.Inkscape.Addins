@@ -186,3 +186,51 @@ class TestHowAValueReadsOnTheSheet:
 
     def test_none_draws_as_empty(self):
         assert svg.for_display(None) == ""
+
+
+class TestWhatANewItemMayTakeFromTheDrawing:
+    """Save As New offers the drawing's values as the new item's defaults. Not all of them.
+
+    The service merges the offer straight onto the new revision, so an empty slot became "" and
+    wiped the creation stamps, and a copied drawing would carry its old part number across.
+    Measured on IND-00000007-SVG.
+    """
+
+    RECORD = """<svg xmlns="http://www.w3.org/2000/svg" xmlns:nexus="https://nexusplm.com/ns/plm">
+      <metadata><nexus:attributes>
+        <nexus:value key="PartNumber">IND-00000004-SVG</nexus:value>
+        <nexus:value key="Revision">B</nexus:value>
+        <nexus:value key="CreatedBy">admin</nexus:value>
+        <nexus:value key="CreationDate">2026-09-28T19:41:00Z</nexus:value>
+        <nexus:value key="ModifiedBy">admin</nexus:value>
+        <nexus:value key="ModificationDate">2026-09-29T01:00:00Z</nexus:value>
+        <nexus:value key="Description">Edited from Inkscape via Edit Values</nexus:value>
+        <nexus:value key="Author">Claude</nexus:value>
+        <nexus:value key="Department"/>
+        <nexus:value key="Priority"></nexus:value>
+      </nexus:attributes></metadata>
+    </svg>"""
+
+    def test_blank_slots_are_not_offered(self):
+        offered = svg.offerable_values(parse(self.RECORD))
+        assert "Department" not in offered
+        assert "Priority" not in offered
+
+    def test_the_servers_own_keys_are_not_offered_whatever_the_drawing_says(self):
+        offered = svg.offerable_values(parse(self.RECORD))
+        for key in ("PartNumber", "Revision", "CreatedBy", "CreationDate",
+                    "ModifiedBy", "ModificationDate"):
+            assert key not in offered, key
+
+    def test_the_users_own_filled_in_values_are(self):
+        assert svg.offerable_values(parse(self.RECORD)) == {
+            "Description": "Edited from Inkscape via Edit Values",
+            "Author": "Claude",
+        }
+
+    def test_a_drawing_that_was_never_in_plm_offers_nothing(self):
+        assert svg.offerable_values(parse("<svg xmlns='http://www.w3.org/2000/svg'/>")) == {}
+
+    def test_read_values_still_reports_every_slot(self):
+        """read_values is the record as it is; offerable_values is what leaves the machine."""
+        assert svg.read_values(parse(self.RECORD))["Department"] == ""
