@@ -84,7 +84,17 @@ file, every menu entry's .inx, uninstall scope). It installs into `%APPDATA%\ink
 
 ## Still to do
 
-- Driven end to end: Connection Status, Sign In, New from Template, Check Out, Save to PLM (with
-  an unsaved edit - the on-screen drawing reached PLM), Check In, Properties. The other commands
-  are test-proven only.
+- **All 21 commands driven end to end on the installed extension (29 Sep 2026)**, after four fixes
+  the sweep found: upload to the document's own path, Revise in place, offer only real values on
+  Save As New, silent Sign Out + filled sheet after Save As Existing. Service-side observations
+  from the sweep are in PR #8.
 - Attributes do not survive **export** to PNG. XMP would; nobody has asked.
+
+## Measured while driving
+
+- `inkscape.exe <file>` from a shell **joins the running Inkscape** as a second window in the same
+  process; the extension's detached `Popen` launch does not (a separate process every time). With
+  two windows in one process, an effect run from the second window retitled and resized the first -
+  Inkscape's own document swap, not ours. One drawing per process is the case that is proven.
+- After Save to PLM the window stays marked modified: Inkscape 1.4 does not watch its file.
+- Inkscape sometimes un-maximises a window after an effect replaces its document. Cosmetic.
