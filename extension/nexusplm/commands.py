@@ -375,7 +375,7 @@ def connection_status(context):
 
 
 #: Add-in version, reported by About and in the service's log.
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 HELP_URL = host.HELP_URL
 
 #: Every command the menu can run, by the name its ``.inx`` passes.
