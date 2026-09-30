@@ -1,89 +1,145 @@
 # Nexus PLM for Inkscape
 
-Product lifecycle management from inside Inkscape. A Python extension that puts the same command
-set the Nexus PLM add-ins give Word, LibreOffice, OpenOffice and ONLYOFFICE into
-**Extensions ▸ Nexus PLM**.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Twenty-one commands: sign in and out, create from a template, open and search the vault, save,
-save as a new or an existing item, check out and in, revise, change ownership, worklist and
-workflow, properties, edit and refresh attribute values, settings, connection status, help and
-about.
+Product lifecycle management from inside Inkscape. Create a drawing from a PLM template, check it
+out, edit its attributes, check it back in — without leaving Inkscape.
+
+![The Nexus PLM submenu under Extensions](docs/menu.png)
+
+The add-in is a Python extension: one `.inx` per command under **Extensions ▸ Nexus PLM**, all
+running the same script. It talks to the **Nexus PLM Addin Service** on `localhost:5100`, which
+owns the dialogs and does the talking to the PLM server — so the same windows, wording and
+behaviour appear in Inkscape, GIMP, QGIS, Word, LibreOffice, OpenOffice and ONLYOFFICE.
 
 Tested against Inkscape **1.4.2** (bundled Python 3.12).
 
+- **[User guide](docs/user-guide.md)** — every command, what it does, and where the values go.
+- **[Developer guide](docs/developer-guide.md)** — how it is built, how to change it, what Inkscape
+  does differently and how that shaped the design.
+
 ---
 
-## How it fits together
+## What it does
 
-The extension talks to **one** thing: the Nexus PLM Addin Service on `http://localhost:5100`,
-carried by the Nexus PLM tray application. It never reaches the Engine or the vault itself. The
-service owns the session, the dialogs and the toasts, so this add-in is thin by design — it knows
-about SVG and about Inkscape, and nothing else.
+Twenty-one commands, in the order the menu shows them (Inkscape sorts a submenu alphabetically):
 
-```
-Inkscape  ──►  nexus_plm.py  ──►  nexusplm/commands.py  ──►  Addin Service (localhost:5100)
-                                        │                            │
-                                   nexusplm/svg.py            the tray's dialogs and toasts
-                                   (values in the drawing)
-```
+| | |
+|---|---|
+| **Documents** | New from Template · Open from PLM · Search |
+| **Saving** | Save to PLM · Save As New Item · Save As Existing Item |
+| **Lifecycle** | Check Out · Check In · Revise · Change Ownership |
+| **Workflow** | My Worklist · New Workflow |
+| **Values** | Properties · Edit Values · Refresh Values |
+| **Session** | Sign In · Sign Out · Current Settings · Connection Status · Help · About |
 
-`client.py`, `state.py`, `identity.py` and `navigator.py` are shared with the LibreOffice add-in
-and carry no Inkscape API at all.
+There is deliberately no Release: a revision reaches Released only by running a workflow, which
+New Workflow starts.
 
-## Where a PLM value lives in a drawing
+A drawing created from a PLM template opens filled in — part number, revision, description, who
+created it and when — because the type says which PLM attribute feeds which field.
+
+![A title block filled in by PLM](docs/title-block.png)
+
+## Where the values live
 
 **The record is the point.** Every mapped attribute is written into the drawing's own
-`<metadata>`, under our namespace, and it survives a round trip through Inkscape because Inkscape
-preserves foreign namespaces there. That is what makes the file identifiable on its own - the
-attributes are *in* the SVG, not in a sidecar or a database row keyed on a filename.
+`<metadata>`, under the `https://nexusplm.com/ns/plm` namespace, and it survives a round trip
+through Inkscape because Inkscape preserves foreign namespaces there. The attributes are *in*
+the SVG — not in a sidecar or a database row keyed on a file name.
 
 | | Where | |
 |---|---|---|
-| **The record** | `<metadata>` → `<nexus:attributes>` | Every mapped value. The reason this add-in exists. |
-| Drawn on the sheet | a `<text>` whose `inkscape:label` is the attribute key | Optional, and most drawings will not use it. |
+| **The record** | `<metadata>` → `<nexus:attributes>` → `<nexus:value key="…">` | Every mapped value. Why this add-in exists. |
+| Drawn on the sheet | a `<text>` whose `inkscape:label` is the attribute key | Optional. The template's title block uses it. |
 
-The second is a convenience for drawings that want a filled-in title block - the shipped template
-has one - but nothing depends on it. A drawing with no labelled text still carries every value.
+A drawing with no labelled text still carries every value.
 
-## Three things Inkscape does differently
+## How it fits together
 
-All measured on 1.4.2, not assumed — and each one shaped the design.
+```
+Inkscape  ──►  nexus_plm.py --command …  ──►  nexusplm/commands.py  ──HTTP──►  Addin Service  ──►  Nexus PLM Engine
+                (one .inx per command)              │                        (localhost:5100)      Vault, types, workflow
+                                               nexusplm/svg.py                       │
+                                          (the record in the drawing)      the dialogs a user sees live here,
+                                                                           shared by every host
+```
 
-**An extension is handed a copy, not the file.** `input_file` is a temporary
-`ink_ext_XXXXXX.svg…`; the edited result goes back to Inkscape on stdout. `inkex` warns in
-capitals against reading or writing the real path, because Inkscape has not necessarily flushed
-its changes and will not respect yours.
+The extension keeps no business rules of its own. It says what it is (`HOST_NAME`) and what it can
+open (`FILE_EXTENSIONS`) with every request — the service needs no code change to gain a host —
+writes PLM's values into the drawing, and asks the service for everything else.
 
-**`DOCUMENT_PATH` does give the real saved path**, so identity works as in every other host: the
-part number is read from the file name and the service resolves the item from it.
+## Installing
 
-**An extension cannot save the document.** There is no such call. So nothing here uploads the file
-on disk — every command that gives PLM a file gives it the drawing *as it is on screen*, written
-to a temp copy under the document's own name. The first version compared disk with screen and
-refused when they differed; that fired on a drawing nobody had touched, because Inkscape's
-in-memory document always carries `sodipodi:namedview` and its own version stamp. Driving it is
-what showed that.
+Run `NexusPlmInkscapeAddinSetup.exe` from a [release](../../releases). Per user, no administrator
+rights: it copies the extension into `%APPDATA%\inkscape\extensions`. Restart Inkscape and
+**Extensions ▸ Nexus PLM** appears.
 
-## Building and installing
+You also need the **Nexus PLM tray application** (`Nexus.PLM.WPF.Addins`) running — it hosts the
+service the extension talks to, and it shows the dialogs.
+
+## Building
 
 ```bash
 cd extension
-python build.py              # regenerate the .inx files from the menu table
-python build.py --install    # ...and copy into Inkscape's user extensions directory
+python build.py                 # regenerate the .inx files from the MENU table
+python build.py --install       # …and copy into Inkscape's user extensions directory
+python -m pytest ../tests -q    # 74 tests; need lxml and pytest, not Inkscape
+"%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" ..\installer\Nexus.PLM.Inkscape.Addin.iss   # the installer
 ```
 
-The `.inx` files are **generated**. Edit `MENU` in `build.py`, not the XML.
+The `.inx` files are **generated**. Edit `MENU` in `build.py`, never the XML.
 
-## Tests
+## Repository layout
 
-```bash
-python -m pytest tests/ -q
-```
+| | |
+|---|---|
+| `extension/nexus_plm.py` | The entry point every `.inx` runs, with a different `--command`. |
+| `extension/build.py` | The menu table; generates the `.inx` files and installs. |
+| `extension/nexusplm/commands.py` | One function per command — the whole surface a user touches. |
+| `extension/nexusplm/svg.py` | Where a PLM value lives in a drawing: the record, the labelled text, a staged file. |
+| `extension/nexusplm/host.py` | The parts that know they are inside Inkscape. |
+| `extension/nexusplm/{client,state,identity,navigator}.py` | Shared with the GIMP and QGIS add-ins; no Inkscape API in any of them. |
+| `tools/build_template.py` | Makes `dist/Inkscape Drawing.svg`, the type's template. |
+| `tests/` | pytest, runs without Inkscape. |
+| `installer/` | Inno Setup script; `tests/test_installer.py` holds it against the source. |
 
-They need `lxml` and `pytest` and run without Inkscape — 40 of them, covering where values live,
-what gets uploaded, every refusal path, and a guard that the menu and the command table still
-agree.
+## Design notes
 
-## Licence
+Things that cost something to learn, kept here so they are not learned twice. All measured on
+1.4.2, not assumed.
 
-MIT. See [LICENSE](LICENSE).
+**An extension is handed a copy, not the file.** `input_file` is a temporary `ink_ext_XXXXXX.svg`
+and the edited result goes back to Inkscape on stdout. `DOCUMENT_PATH` does give the real saved
+path, so identity works as in every other host.
+
+**Uploads write the drawing on screen to the drawing's own file.** An extension cannot ask
+Inkscape to save, and comparing disk with screen refuses drawings nobody touched (Inkscape's
+in-memory document always differs from its file). So Save to PLM writes Inkscape's own current
+buffer over the document's path and uploads that. Not a temp copy: the service records the path it
+is given as the item's home, and a temp path became the next revision's home.
+
+**Revise ups the revision in place.** The service stages the next revision under the same file
+name; the extension hands that file back as its own output, and the window the user is looking at
+becomes the new revision. inkex needs a tree parsed by its own loader for that — bytes pass `save`
+but not `has_changed`, and are dropped without a word.
+
+**`needs-document="false"` kills the command.** An `EffectExtension` with no document dies inside
+inkex's own loader and Inkscape shows the traceback. Every entry needs a document; a test holds it.
+
+**stderr is a user interface.** Inkscape shows an extension's stderr in a dialog, so a stray Python
+warning reads as a broken add-in. Warnings are silenced at the entry point, and `commands.run`
+turns anything unexpected into a toast.
+
+**`implements-custom-gui="true"`** is what stops Inkscape drawing its own small "working…" window
+for the whole time a Nexus dialog is open.
+
+## Contributing
+
+Issues and pull requests are welcome. Keep a change and its test together, run the tests before
+opening a pull request, and say *why* in the commit body. Work goes on a branch and is merged
+through `next`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
