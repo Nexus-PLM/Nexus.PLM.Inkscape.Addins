@@ -35,12 +35,19 @@ python -m pytest tests/ -q
 - **The metadata record is the deliverable.** Attributes are injected into the file's own data
   model so the SVG carries them wherever it goes. Drawing values into labelled text elements is a
   convenience most users will not use - never let it become the thing a command depends on.
-- **Never read or write the document's real path**, except a freshly staged file nothing has open
-  yet (`svg.write_into_file`). Inkscape hands over a copy and takes the
-  result back on stdout. `inkex` says so in capitals, and writing it loses the user's work.
-- **Uploads send the drawing on screen**, via `host.upload_copy`, never `context.path`. The copy
-  keeps the document's own file name, because the vault names the dataset from it and
-  `/plm/state?file_path=` reads the part number back out of it.
+- **Never read the document's real path for content** - Inkscape hands over a copy and takes the
+  result back on stdout; the file on disk is stale the moment the user draws. The two writes that
+  are allowed: a freshly staged file nothing has open yet (`svg.write_into_file`), and
+  `host.upload_copy`, which writes Inkscape's own current buffer over the document's path.
+- **Uploads send the drawing on screen, written to the document's OWN path**, via
+  `host.upload_copy`. Not a temp copy: `SaveRequest` has one `FilePath` that the service both reads
+  and records as the item's `plm_file_path`, so a temp path became the next revision's home -
+  Revise staged rev B under `%TEMP%` and opened it in a second window. Marc: "it must get written
+  to the staging directory."
+- **Revise ups the revision in place.** When the staged file *is* the open document
+  (`host.same_file`), `_hand_over` makes it the extension's output (`host.replace_document`)
+  instead of launching a second Inkscape. A different file - Open from PLM, Search - still opens
+  in a new window.
 - **No `needs-document="false"`.** An `EffectExtension` with no document dies inside inkex's own
   loader (`'NoneType' object has no attribute 'selection'`) and Inkscape shows the traceback to
   the user. A test holds this.
@@ -61,6 +68,10 @@ python -m pytest tests/ -q
 - Inkscape **sorts a submenu's entries alphabetically**. The order of `MENU` is documentation.
 - `DOCUMENT_PATH` holds the real saved path; `input_file` is a temp copy.
 - Inkscape picks up a new `.inx` **without a restart**.
+- Inkscape 1.4 does **not watch the document's file**: writing it from an extension neither
+  reloads the drawing nor prompts. The window stays marked modified.
+- The service's `[CommandToast]` commands (Sign Out among them) already toast; a toast of our
+  own on top is a double.
 - Inkscape's in-memory document is never byte-identical to its file, so "has it changed?" cannot
   be answered by comparing them.
 

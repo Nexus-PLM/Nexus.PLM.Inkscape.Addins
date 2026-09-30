@@ -111,7 +111,16 @@ def _hand_over(context, answer):
             # because it could not fill them in is not.
             host.log("could not write values into %s: %r" % (staged, error))
 
-    host.open_document(staged)
+    if host.same_file(staged, context.path):
+        # PLM staged the file the user already has open - which is what Revise does, since the
+        # next revision keeps the part number and so the file name. Hand it back as this
+        # extension's output and the open window BECOMES the new revision. Opening it in a
+        # second Inkscape was the bug Marc saw: "opening a new file, not up-revving the
+        # existing one", with the closed revision still open beside it.
+        host.replace_document(context.extension, staged)
+        host.log("replaced the open drawing with %s" % staged)
+    else:
+        host.open_document(staged)
     return True
 
 
@@ -137,11 +146,15 @@ def sign_in(context):
 
 
 def sign_out(context):
-    """Sign out of PLM."""
+    """Sign out of PLM.
+
+    No toast of our own on success. ``/api/auth/logout`` carries the service's ``[CommandToast]``,
+    so the tray has already said "Logout - Signed out admin" by the time the answer arrives; a
+    second "Signed out." underneath it is what driving showed. The Office add-ins had the same
+    double-toast on Settings for the same reason - the service announces its own commands.
+    """
     answer = context.client.sign_out()
-    if answer.get("success"):
-        host.say(context.client, "Signed out.")
-    else:
+    if not answer.get("success"):
         _refused(context, answer, "Sign Out")
 
 
