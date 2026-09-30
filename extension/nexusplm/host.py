@@ -197,19 +197,25 @@ def replace_document(extension, path):
     output means the window the user is looking at *becomes* the new revision - no second Inkscape,
     no old revision left open beside it.
 
-    It works because ``inkex`` writes ``self.document`` to stdout when the extension finishes, and
-    accepts bytes there as readily as a tree (``base.py``, ``save``). Bytes are used deliberately:
-    the staged file is emitted exactly as written, with nothing re-serialised in between.
+    It works because ``inkex`` writes ``self.document`` to stdout when the extension finishes. What
+    it will accept there was measured, not read off the type hint: the first version handed over
+    the file's **bytes**, which ``save`` does take - but ``has_changed`` runs first and calls
+    ``etree.tostring(self.document)``, which bytes cannot survive, so the output was silently
+    dropped and the canvas went on showing revision A while the file and PLM said B. ``save`` then
+    calls ``document.getroot().tostring()``, which only inkex's own element classes have. A tree
+    parsed by **inkex's own loader** is the one shape both halves accept, so that is what is used
+    inside Inkscape; the tests, which run without inkex, get a plain lxml tree.
 
     ``extension.svg`` is refreshed too, so anything that reads the root after this sees the new
     drawing rather than the one it replaced.
     """
-    from lxml import etree
-
     with open(path, "rb") as handle:
         payload = handle.read()
-    extension.document = payload
     try:
-        extension.svg = etree.fromstring(payload)
-    except Exception:
-        pass
+        from inkex import load_svg                      # inside Inkscape
+        document = load_svg(payload)
+    except ImportError:                                 # the tests, under plain lxml
+        from lxml import etree
+        document = etree.ElementTree(etree.fromstring(payload))
+    extension.document = document
+    extension.svg = document.getroot()

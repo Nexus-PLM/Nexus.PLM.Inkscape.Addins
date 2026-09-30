@@ -106,13 +106,14 @@ class TestSameFile:
 class TestReplaceDocument:
     """How Revise ups the revision in place: the staged file becomes the extension's output."""
 
-    def test_the_staged_bytes_become_the_document(self, tmp_path):
+    def test_the_staged_file_becomes_the_document_as_a_parsed_tree(self, tmp_path):
+        """A tree, not bytes: inkex's has_changed calls etree.tostring on it before save does."""
         staged = tmp_path / "DRW-1.svg"
         staged.write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg"><rect id="revB"/></svg>')
         extension = FakeExtension()
         host.replace_document(extension, str(staged))
-        # inkex emits self.document on save and accepts bytes - so bytes it is, verbatim.
-        assert extension.document == staged.read_bytes()
+        assert hasattr(extension.document, "getroot")
+        assert b'id="revB"' in etree.tostring(extension.document)
 
     def test_the_root_is_refreshed_too(self, tmp_path):
         staged = tmp_path / "DRW-1.svg"
