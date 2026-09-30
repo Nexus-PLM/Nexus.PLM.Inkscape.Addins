@@ -111,7 +111,16 @@ def _hand_over(context, answer):
             # because it could not fill them in is not.
             host.log("could not write values into %s: %r" % (staged, error))
 
-    host.open_document(staged)
+    if host.same_file(staged, context.path):
+        # PLM staged the file the user already has open - which is what Revise does, since the
+        # next revision keeps the part number and so the file name. Hand it back as this
+        # extension's output and the open window BECOMES the new revision. Opening it in a
+        # second Inkscape was the bug Marc saw: "opening a new file, not up-revving the
+        # existing one", with the closed revision still open beside it.
+        host.replace_document(context.extension, staged)
+        host.log("replaced the open drawing with %s" % staged)
+    else:
+        host.open_document(staged)
     return True
 
 
@@ -137,11 +146,15 @@ def sign_in(context):
 
 
 def sign_out(context):
-    """Sign out of PLM."""
+    """Sign out of PLM.
+
+    No toast of our own on success. ``/api/auth/logout`` carries the service's ``[CommandToast]``,
+    so the tray has already said "Logout - Signed out admin" by the time the answer arrives; a
+    second "Signed out." underneath it is what driving showed. The Office add-ins had the same
+    double-toast on Settings for the same reason - the service announces its own commands.
+    """
     answer = context.client.sign_out()
-    if answer.get("success"):
-        host.say(context.client, "Signed out.")
-    else:
+    if not answer.get("success"):
         _refused(context, answer, "Sign Out")
 
 
@@ -193,7 +206,7 @@ def save_as_new(context):
 
     answer = context.client.save_as_new(
         _to_upload(context), context.hwnd,
-        attributes=svg.read_values(context.root),
+        attributes=svg.offerable_values(context.root),
         file_extensions=FILE_EXTENSIONS)
     if not answer.get("success"):
         return _refused(context, answer, "Save As New Item")
@@ -214,7 +227,16 @@ def save_as_existing(context):
     if not answer.get("success"):
         return _refused(context, answer, "Save As Existing Item")
     _remember(context, answer)
-    _apply(context, answer, quiet=True)
+
+    # The answer names the item the drawing now belongs to but carries none of its values - the
+    # service's Save As Existing answers no mappings, for any host. Ask for them, so the sheet
+    # stops reading "-" and shows whose drawing it has become. Driven: IND-00000003-SVG took the
+    # plain drawing and the title block stayed blank until Refresh Values was run by hand.
+    item_id = answer.get("item_id")
+    if item_id:
+        values = context.client.refresh_values(item_id)
+        if values.get("success"):
+            _apply(context, values, quiet=True)
 
 
 # ── lifecycle ────────────────────────────────────────────────────────────────
