@@ -17,7 +17,6 @@ Two Inkscape facts shape all of it, both measured on 1.4.2 rather than assumed:
 """
 
 import os
-import tempfile
 import subprocess
 import sys
 
@@ -141,34 +140,82 @@ def say(client, message, severity="info"):
 
 
 def upload_copy(extension, path):
-    """A file holding exactly the drawing the user is looking at, for PLM to take.
+    """Write the drawing the user is looking at to its own file, and answer that path for PLM.
 
     Every other Nexus add-in saves the document and then uploads the file. Inkscape's extension
-    interface has no save, so the first attempt here compared the file on disk with the document
-    on screen and refused when they differed, telling the user to press Ctrl+S.
+    interface has no save, and this function has been wrong twice about what to do instead.
 
-    **That was wrong, and driving it is what showed it.** Inkscape's in-memory document is never
-    byte-identical to the file: it carries ``sodipodi:namedview``, its own ``inkscape:version``
-    and other bookkeeping that only exists once the document is open. So the check fired on a
-    drawing nobody had touched, and Save to PLM, Save As New and Check In would have refused for
-    ever, each time blaming the user for an edit they had not made.
+    The first attempt compared the file on disk with the document on screen and refused when they
+    differed. Inkscape's in-memory document is never byte-identical to its file - it carries
+    ``sodipodi:namedview`` and its own version stamp from the moment it opens - so that refused a
+    drawing nobody had touched.
 
-    There is nothing to compare, because there is no need to compare. Inkscape hands the extension
-    the **current** document, unsaved edits included - so the honest thing to upload is that,
-    not whatever the file happens to hold. The copy is written under the real document's own file
-    name, because the vault names a dataset from it and ``/plm/state?file_path=`` reads the part
-    number back out of it; a temp name would break both.
+    The second wrote the on-screen drawing to a copy under ``%TEMP%`` and uploaded that. It
+    uploaded the right bytes and recorded the wrong place: ``SaveRequest`` has one ``FilePath``,
+    which the service both reads and **records as the item's ``plm_file_path``**. Revise then
+    staged the next revision at that temp path and opened it in a second window, with the old
+    revision still open beside it. Marc: *"it must get written to the staging directory."*
+
+    So the on-screen drawing is written to **the document's own path** and that path is uploaded.
+    Writing the document's path is the thing ``inkex`` warns against in capitals, and the warning
+    is right about what it covers: reading the file gives stale data, and writing something
+    Inkscape will not respect loses it. Neither applies to writing Inkscape's own current buffer -
+    it is what Inkscape would write on Ctrl+S, and Inkscape 1.4 does not watch the file, so nothing
+    reloads or prompts. The document stays marked modified, and the user's next save writes the
+    same thing again.
+
+    ``path`` is required: a drawing that has never been saved has no file for PLM to take, and the
+    commands refuse that case before reaching here.
     """
+    if not path:
+        raise ValueError("a drawing with no file cannot be uploaded")
+
     from lxml import etree
 
-    folder = os.path.join(tempfile.gettempdir(), "nexus-inkscape")
-    os.makedirs(folder, exist_ok=True)
-
-    name = os.path.basename(path) if path else "Untitled.svg"
-    copy = os.path.join(folder, name)
     # etree.tostring(element), not element.tostring() - an lxml Element has no such method, and
-    # the first version of this called it and swallowed the AttributeError.
-    with open(copy, "wb") as handle:
-        handle.write(etree.tostring(extension.svg.getroottree().getroot(), xml_declaration=True,
-                                    encoding="UTF-8"))
-    return copy
+    # an early version of this called it and swallowed the AttributeError.
+    payload = etree.tostring(extension.svg.getroottree().getroot(),
+                             xml_declaration=True, encoding="UTF-8")
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "wb") as handle:
+        handle.write(payload)
+    return path
+
+
+def same_file(a, b):
+    """Whether two paths name the same file, as Windows sees it: case-insensitive, normalised."""
+    if not a or not b:
+        return False
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def replace_document(extension, path):
+    """Make the file at ``path`` the drawing in the user's window.
+
+    This is how Revise ups the revision **in place**. The service stages the new revision under
+    the same file name, values already written in; handing that file back as the extension's
+    output means the window the user is looking at *becomes* the new revision - no second Inkscape,
+    no old revision left open beside it.
+
+    It works because ``inkex`` writes ``self.document`` to stdout when the extension finishes. What
+    it will accept there was measured, not read off the type hint: the first version handed over
+    the file's **bytes**, which ``save`` does take - but ``has_changed`` runs first and calls
+    ``etree.tostring(self.document)``, which bytes cannot survive, so the output was silently
+    dropped and the canvas went on showing revision A while the file and PLM said B. ``save`` then
+    calls ``document.getroot().tostring()``, which only inkex's own element classes have. A tree
+    parsed by **inkex's own loader** is the one shape both halves accept, so that is what is used
+    inside Inkscape; the tests, which run without inkex, get a plain lxml tree.
+
+    ``extension.svg`` is refreshed too, so anything that reads the root after this sees the new
+    drawing rather than the one it replaced.
+    """
+    with open(path, "rb") as handle:
+        payload = handle.read()
+    try:
+        from inkex import load_svg                      # inside Inkscape
+        document = load_svg(payload)
+    except ImportError:                                 # the tests, under plain lxml
+        from lxml import etree
+        document = etree.ElementTree(etree.fromstring(payload))
+    extension.document = document
+    extension.svg = document.getroot()

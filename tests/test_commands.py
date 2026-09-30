@@ -130,16 +130,15 @@ class TestAnUnsavedDrawing:
 
 
 class TestWhatGetsUploaded:
-    """PLM is given the drawing on screen, not the file on disk.
+    """PLM is given the document's own path, holding the drawing on screen.
 
-    The first version compared the two and refused when they differed. Inkscape's in-memory
-    document is never byte-identical to its file - it carries sodipodi:namedview and its own
-    version stamp - so that refused a drawing nobody had touched. These tests hold the fix.
+    Not the file as it was on disk - Inkscape's in-memory document is what the user is looking
+    at - and not a copy under %TEMP% either: the service records the path it is given as the
+    item's plm_file_path, and Revise stages the next revision there.
     """
 
-    def test_save_to_plm_sends_a_copy_of_the_open_drawing(self, monkeypatch, tmp_path):
+    def test_save_to_plm_sends_the_documents_own_path(self, monkeypatch):
         monkeypatch.setattr(commands.identity, "item_of", lambda client, path: "item-1")
-        monkeypatch.setattr(host.tempfile, "gettempdir", lambda: str(tmp_path))
         client = FakeClient()
         ctx = context(client)
         sent = {}
@@ -147,32 +146,123 @@ class TestWhatGetsUploaded:
                             lambda item_id, path: sent.update(item=item_id, path=path)
                             or {"success": True})
         commands.save_to_plm(ctx)
-        assert sent["path"] != ctx.path
-        assert os.path.basename(sent["path"]) == os.path.basename(ctx.path)
-        assert b"<svg" in open(sent["path"], "rb").read()
+        assert sent["path"] == ctx.path
 
-    def test_the_copy_keeps_the_documents_own_file_name(self, monkeypatch, tmp_path):
-        """The vault names the dataset from it, and /plm/state reads the part number back out."""
-        monkeypatch.setattr(host.tempfile, "gettempdir", lambda: str(tmp_path))
-        ctx = context(path="C:/drawings/DRW-000009-SVG.svg")
-        copy = host.upload_copy(ctx.extension, ctx.path)
-        assert os.path.basename(copy) == "DRW-000009-SVG.svg"
-
-    def test_an_untouched_drawing_is_not_refused(self, monkeypatch, tmp_path):
+    def test_an_untouched_drawing_is_not_refused(self, monkeypatch):
         """The regression that drove the rewrite: this used to say "press Ctrl+S" forever."""
         monkeypatch.setattr(commands.identity, "item_of", lambda client, path: "item-1")
-        monkeypatch.setattr(host.tempfile, "gettempdir", lambda: str(tmp_path))
         client = FakeClient()
         commands.save_to_plm(context(client))
         assert "save" in client.calls
         assert not any("Ctrl+S" in m for _s, m in client.said)
 
-    def test_check_in_sends_the_same_copy(self, monkeypatch, tmp_path):
+    def test_check_in_sends_it_too(self, monkeypatch):
         monkeypatch.setattr(commands.identity, "item_of", lambda client, path: "item-1")
-        monkeypatch.setattr(host.tempfile, "gettempdir", lambda: str(tmp_path))
         client = FakeClient()
         commands.check_in(context(client))
         assert "check_in" in client.calls
+
+
+class TestSaveAsNewOffers:
+    """What Save As New tells the service the drawing holds. Measured cause of blank items."""
+
+    TEMPLATE = """<svg xmlns="http://www.w3.org/2000/svg" xmlns:nexus="https://nexusplm.com/ns/plm">
+      <metadata><nexus:attributes>
+        <nexus:value key="PartNumber"/><nexus:value key="Revision"/>
+        <nexus:value key="CreatedBy"/><nexus:value key="CreationDate"/>
+        <nexus:value key="Description">A plain drawing</nexus:value>
+        <nexus:value key="Author"/>
+      </nexus:attributes></metadata>
+    </svg>"""
+
+    def test_empty_slots_and_server_keys_stay_home(self, monkeypatch):
+        client = FakeClient()
+        sent = {}
+        monkeypatch.setattr(client, "save_as_new",
+                            lambda path, hwnd, attributes=None, file_extensions=None:
+                            sent.update(attributes=attributes) or {"success": True})
+        commands.save_as_new(context(client, extension=FakeExtension(self.TEMPLATE)))
+        assert sent["attributes"] == {"Description": "A plain drawing"}
+
+
+class TestSaveAsExistingFillsTheSheet:
+    def test_the_items_values_are_fetched_and_drawn(self, monkeypatch):
+        """The service's answer names the item and nothing else; the values come from a second ask."""
+        client = FakeClient(
+            save_as_existing={"success": True, "item_id": "item-3", "part_number": "DRW-000003-SVG"},
+            refresh_values={"success": True,
+                            "attribute_mappings": {"PartNumber": "DRW-000003-SVG", "Revision": "A"}})
+        ctx = context(client)
+        commands.save_as_existing(ctx)
+        assert client.calls.index("save_as_existing") < client.calls.index("refresh_values")
+        assert svg.read_values(ctx.root) == {"PartNumber": "DRW-000003-SVG", "Revision": "A"}
+
+    def test_a_refusal_asks_for_nothing_more(self):
+        client = FakeClient(save_as_existing={"success": False, "error": "Locked by jdoe."})
+        commands.save_as_existing(context(client))
+        assert "refresh_values" not in client.calls
+
+
+class TestReviseInPlace:
+    """Revise stages the next revision under the SAME file name. The open window must become it.
+
+    Opening it in a second Inkscape, with the closed revision still open beside it, was the bug
+    Marc saw: "it's opening a new file, not up-revving the existing one".
+    """
+
+    def _revised(self, staged):
+        return {
+            "success": True, "item_id": "item-1", "revision": "B",
+            "file_path": str(staged).upper(),          # same file, different case
+            "attribute_mappings": {"Revision": "B"},
+        }
+
+    def test_the_staged_file_replaces_the_open_drawing_and_opens_nothing(
+            self, monkeypatch, tmp_path):
+        monkeypatch.setattr(commands.identity, "item_of", lambda client, path: "item-1")
+        staged = tmp_path / "DRW-000001-SVG.svg"
+        staged.write_bytes(SVG_TEXT.encode("utf-8"))
+        opened, replaced = [], []
+        monkeypatch.setattr(host, "open_document", lambda p: opened.append(p))
+        monkeypatch.setattr(host, "replace_document", lambda ext, p: replaced.append(p))
+        commands.revise(context(FakeClient(revise=self._revised(staged)), path=str(staged)))
+        assert opened == []
+        assert len(replaced) == 1
+
+    def test_the_new_revisions_values_are_in_the_file_before_it_is_handed_back(
+            self, monkeypatch, tmp_path):
+        monkeypatch.setattr(commands.identity, "item_of", lambda client, path: "item-1")
+        staged = tmp_path / "DRW-000001-SVG.svg"
+        staged.write_bytes(SVG_TEXT.encode("utf-8"))
+        monkeypatch.setattr(host, "replace_document", lambda ext, p: None)
+        commands.revise(context(FakeClient(revise=self._revised(staged)), path=str(staged)))
+        assert b">B<" in staged.read_bytes()
+
+    def test_a_different_file_still_opens_in_a_new_window(self, monkeypatch, tmp_path):
+        """Open from PLM brings a different item; that must never replace the user's drawing."""
+        other = tmp_path / "DRW-000002-SVG.svg"
+        other.write_bytes(SVG_TEXT.encode("utf-8"))
+        opened, replaced = [], []
+        monkeypatch.setattr(host, "open_document", lambda p: opened.append(p))
+        monkeypatch.setattr(host, "replace_document", lambda ext, p: replaced.append(p))
+        client = FakeClient(open_document={"success": True, "item_id": "item-2",
+                                           "file_path": str(other)})
+        commands.open_from_plm(context(client, path=str(tmp_path / "DRW-000001-SVG.svg")))
+        assert opened == [str(other)]
+        assert replaced == []
+
+
+class TestSignOut:
+    def test_it_does_not_toast_on_success(self):
+        """The service's own [CommandToast] already says it; a second toast was measured live."""
+        client = FakeClient()
+        commands.sign_out(context(client))
+        assert client.said == []
+
+    def test_a_refusal_is_still_shown(self):
+        client = FakeClient(sign_out={"success": False, "error": "Not signed in."})
+        commands.sign_out(context(client))
+        assert any("Not signed in." in m for _s, m in client.said)
 
 
 class TestValuesReachTheDrawing:
