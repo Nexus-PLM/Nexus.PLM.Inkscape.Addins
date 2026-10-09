@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ExcludeAssets="runtime": the contract DLL must NEVER ride into the publish output. -->
+    <PackageReference Include="Nexus.PLM.Addin.Sdk.Translators" Version="0.1.0" ExcludeAssets="runtime" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="4.148.0" />
+    <PackageReference Include="Svg.Skia" Version="5.2.3" />
+  </ItemGroup>
+
+</Project>

@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 installer/Output/*.exe
+
+# .NET build output (Translators projects)
+**/bin/
+**/obj/

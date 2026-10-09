@@ -69,6 +69,18 @@ The extension keeps no business rules of its own. It says what it is (`HOST_NAME
 open (`FILE_EXTENSIONS`) with every request — the service needs no code change to gain a host —
 writes PLM's values into the drawing, and asks the service for everything else.
 
+## Server-side translators
+
+Per the three-deliverables convention (the Addin SDK's `docs/architecture.md`, section 10),
+`Nexus.PLM.Inkscape.Translators` carries this repo's example conversions for the Translation
+server, deployed to `Nexus\Translators\inkscape\`: `svg_to_png`, `svg_to_pdf` and
+`svg_to_jpeg`, rendered with Skia in pure .NET — nothing needs Inkscape installed on the
+server, and `.svgz` gunzips transparently. This repo is the rollout's proof that a plugin
+carrying NATIVE libraries (libSkiaSharp) resolves through the server's per-plugin load
+context, so keep its `runtimes\` tree and `.deps.json` in the deployed folder. A `v*` tag
+attaches `Nexus.PLM.Inkscape.Translators.zip` to the GitHub release; keys are reserved in
+`Nexus.PLM.Services/docs/translator-ownership.md`.
+
 ## Installing
 
 Run `NexusPlmInkscapeAddinSetup.exe` from a [release](../../releases). Per user, no administrator
