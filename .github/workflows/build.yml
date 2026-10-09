@@ -1,0 +1,81 @@
+name: build
+
+on:
+  pull_request:
+    branches: [main, next]
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: pip install pytest lxml
+      - name: Run the extension's tests
+        run: python -m pytest tests/ -q
+
+  dotnet:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Add the Nexus-PLM package feed
+        run: >
+          dotnet nuget add source "https://nuget.pkg.github.com/Nexus-PLM/index.json"
+          --name nexus-plm
+          --username "${{ github.actor }}"
+          --password "${{ secrets.NUGET_READ_TOKEN || secrets.GITHUB_TOKEN }}"
+          --store-password-in-clear-text
+      - name: Test the translators (real renders — Skia natives via the Linux test package)
+        run: dotnet test Nexus.PLM.Inkscape.Translators.Tests/Nexus.PLM.Inkscape.Translators.Tests.csproj -c Release
+
+  # A v* tag attaches the translators deliverable to the GitHub release: the publish output
+  # minus the contract DLL. The deps.json and the runtimes\ tree stay in — the server's
+  # per-plugin resolver loads the win-x64 Skia natives through them, which is exactly what
+  # this repo proves for every native-dependent plugin after it.
+  release-translators:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Add the Nexus-PLM package feed
+        run: >
+          dotnet nuget add source "https://nuget.pkg.github.com/Nexus-PLM/index.json"
+          --name nexus-plm
+          --username "${{ github.actor }}"
+          --password "${{ secrets.NUGET_READ_TOKEN || secrets.GITHUB_TOKEN }}"
+          --store-password-in-clear-text
+      - name: Publish the translators
+        run: dotnet publish Nexus.PLM.Inkscape.Translators/Nexus.PLM.Inkscape.Translators.csproj -c Release -o out
+      - name: Assert the output shape, then zip
+        run: |
+          test ! -f out/Nexus.PLM.Addin.Sdk.Translators.dll
+          test -f out/Nexus.PLM.Inkscape.Translators.deps.json
+          test -f out/runtimes/win-x64/native/libSkiaSharp.dll
+          (cd out && zip -qr ../Nexus.PLM.Inkscape.Translators.zip .)
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --notes "Inkscape add-in release ${GITHUB_REF_NAME}" || true
+          gh release upload "${GITHUB_REF_NAME}" Nexus.PLM.Inkscape.Translators.zip --clobber
