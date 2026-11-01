@@ -213,7 +213,9 @@ class TestReviseInPlace:
     def _revised(self, staged):
         return {
             "success": True, "item_id": "item-1", "revision": "B",
-            "file_path": str(staged).upper(),          # same file, different case
+            # Same file, different case - but only where the filesystem folds case. On Linux an
+            # upper-cased path is a different (absent) file, so the spelling is left alone there.
+            "file_path": (str(staged).upper() if os.path.normcase("A") == "a" else str(staged)),
             "attribute_mappings": {"Revision": "B"},
         }
 

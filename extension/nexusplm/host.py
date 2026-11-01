@@ -183,10 +183,20 @@ def upload_copy(extension, path):
 
 
 def same_file(a, b):
-    """Whether two paths name the same file, as Windows sees it: case-insensitive, normalised."""
+    """Whether two paths name the same file, by the rules of the OS this is running on.
+
+    Case and separators only fold where the filesystem folds them (``os.path.normcase``: Windows
+    yes, Linux no), so ``Drw-1.svg`` and ``DRW-1.svg`` are one file on Windows and two on Linux.
+    When both exist the filesystem itself is asked, which also covers links and 8.3 names.
+    """
     if not a or not b:
         return False
-    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+    if os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b)):
+        return True
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
 
 
 def replace_document(extension, path):

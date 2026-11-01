@@ -8,6 +8,9 @@ from lxml import etree
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "extension"))
 
+import ntpath
+import posixpath
+
 import pytest  # noqa: E402
 
 from nexusplm import host  # noqa: E402
@@ -94,6 +97,13 @@ class TestUploadCopy:
 class TestSameFile:
     def test_case_and_slashes_do_not_matter_on_windows(self):
         assert host.same_file(r"C:\Nexus\Staging\DRW-1.svg", "c:/nexus/staging/drw-1.svg")
+
+    @pytest.mark.parametrize("flavour,same", [(ntpath, True), (posixpath, False)])
+    def test_case_folds_only_where_the_os_folds_it(self, monkeypatch, flavour, same):
+        """Proves the Linux semantics on any host: posix keeps case, nt folds it."""
+        monkeypatch.setattr(host.os, "path", flavour)
+        a, b = ("C:/nexus/Drw-1.svg", "C:/nexus/DRW-1.svg") if flavour is ntpath             else ("/nexus/Drw-1.svg", "/nexus/DRW-1.svg")
+        assert host.same_file(a, b) is same
 
     def test_different_files_differ(self):
         assert not host.same_file(r"C:\Nexus\Staging\DRW-1.svg", r"C:\Nexus\Staging\DRW-2.svg")
