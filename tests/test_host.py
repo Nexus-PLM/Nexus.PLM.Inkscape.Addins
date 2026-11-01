@@ -95,7 +95,8 @@ class TestUploadCopy:
 
 
 class TestSameFile:
-    def test_case_and_slashes_do_not_matter_on_windows(self):
+    def test_case_and_slashes_do_not_matter_on_windows(self, monkeypatch):
+        monkeypatch.setattr(host.os, "path", ntpath)
         assert host.same_file(r"C:\Nexus\Staging\DRW-1.svg", "c:/nexus/staging/drw-1.svg")
 
     @pytest.mark.parametrize("flavour,same", [(ntpath, True), (posixpath, False)])
@@ -105,7 +106,8 @@ class TestSameFile:
         a, b = ("C:/nexus/Drw-1.svg", "C:/nexus/DRW-1.svg") if flavour is ntpath             else ("/nexus/Drw-1.svg", "/nexus/DRW-1.svg")
         assert host.same_file(a, b) is same
 
-    def test_different_files_differ(self):
+    def test_different_files_differ(self, monkeypatch):
+        monkeypatch.setattr(host.os, "path", ntpath)
         assert not host.same_file(r"C:\Nexus\Staging\DRW-1.svg", r"C:\Nexus\Staging\DRW-2.svg")
 
     def test_nothing_is_never_the_same_file(self):
