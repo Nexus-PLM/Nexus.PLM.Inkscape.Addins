@@ -41,7 +41,8 @@ class TestTheDestination:
         """Two installers - the developer one and the shipped one - must agree on where."""
         assert define("ExtensionsDir") == r"{userappdata}\inkscape\extensions"
         # build.py resolves the same directory through APPDATA.
-        assert build.user_extensions_dir().lower().endswith(r"\inkscape\extensions")
+        assert build.user_extensions_dir().replace("\\", "/").lower().endswith(
+            "/inkscape/extensions")
 
 
 class TestThePayload:
@@ -49,7 +50,8 @@ class TestThePayload:
         sources = re.findall(r'^Source:\s*"\.\.\\([^"]+)"', script(), re.MULTILINE)
         assert sources, "no [Files] sources found"
         for source in sources:
-            folder, pattern = os.path.split(source)
+            # The .iss is written with Windows separators whatever OS reads it.
+            folder, pattern = os.path.split(source.replace("\\", "/"))
             base = os.path.join(ROOT, folder)
             assert os.path.isdir(base), "missing folder: " + folder
             if "*" in pattern:
